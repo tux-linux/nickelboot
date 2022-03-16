@@ -109,28 +109,48 @@ setup() {
 	mkdir -p /nickel/onboard-overlay/work
 	mkdir -p /nickel/onboard-overlay/merged
 
-	if [ -e "${ROOTFS_OVERLAY}" ]; then
-		:
-	fi
-	if [ -e "${ONBOARD_OVERLAY}" ]; then
-	       :
-	fi	       
-
 	## Root filesystem
 	print "Setting up root filesystem"
 	mount "${ROOTFS}" /nickel/rootfs-overlay/read
-	fuse-overlayfs -o lowerdir=/nickel/rootfs-overlay/read,upperdir=/nickel/rootfs-overlay/write,workdir=/nickel/rootfs-overlay/work /nickel/rootfs-overlay/merged
+	if [ -f "${ROOTFS_OVERLAY}" ]; then
+		print "Setting up root FS overlay"
+		mkdir -p /nickel/rootfs-overlay/overlay-unionfs
+		mkdir -p /nickel/rootfs-overlay/overlay-unionfs-merged
+		mount "${ROOTFS_OVERLAY}" /nickel/rootfs-overlay/overlay-unionfs
+		unionfs /nickel/rootfs-overlay/overlay-unionfs:/nickel/rootfs-overlay/read /nickel/rootfs-overlay/overlay-unionfs-merged
+		fuse-overlayfs -o lowerdir=/nickel/rootfs-overlay/overlay-unionfs-merged,upperdir=/nickel/rootfs-overlay/write,workdir=/nickel/rootfs-overlay/work /nickel/rootfs-overlay/merged
+	else
+		fuse-overlayfs -o lowerdir=/nickel/rootfs-overlay/read,upperdir=/nickel/rootfs-overlay/write,workdir=/nickel/rootfs-overlay/work /nickel/rootfs-overlay/merged
+	fi
+	# NickelMenu needs to move files in this directory, which some of the older kernels don't allow
+	mkdir /tmp/imageformats
+	cp -r /nickel/rootfs-overlay/merged/usr/local/Kobo/imageformats/* /tmp/imageformats
+	mount -t tmpfs tmpfs -o size=4M /nickel/rootfs-overlay/merged/usr/local/Kobo/imageformats
+	cp -r /tmp/imageformats/* /nickel/rootfs-overlay/merged/usr/local/Kobo/imageformats
+	rm -rf /tmp/imageformats
+	# Mounting devtmpfs early, otherwise mmcblk0 open fails with "Permission denied"
 	mount -t devtmpfs devtmpfs /nickel/rootfs-overlay/merged/dev
 	mkdir -p /nickel/rootfs-overlay/merged/mnt/onboard
 	# Prevent deleting '/mnt/onboard/.kobo' for no reason and mounting mmcblk0p1 and mmcblk0p3
 	print "Patching firmware rcS"
 	cat /nickel/rootfs-overlay/read/etc/init.d/rcS | sed '/rm -rf \/mnt\/onboard/d;/mmcblk0p1/d;/mmcblk0p3/d' > /nickel/rootfs-overlay/merged/etc/init.d/rcS
-
 	## Onboard filesystem
 	if [ -f "${ONBOARD}" ]; then
 		print "Setting up onboard filesystem"
 		mount "${ONBOARD}" /nickel/onboard-overlay/read
-		fuse-overlayfs -o lowerdir=/nickel/onboard-overlay/read,upperdir=/nickel/onboard-overlay/write,workdir=/nickel/onboard-overlay/work /nickel/onboard-overlay/merged
+		if [ -f "${ONBOARD_OVERLAY}" ]; then
+			print "Setting up onboard FS overlay"
+			mkdir -p /nickel/onboard-overlay/overlay-unionfs
+			mkdir -p /nickel/onboard-overlay/overlay-unionfs-merged
+			mount "${ONBOARD_OVERLAY}" /nickel/onboard-overlay/overlay-unionfs
+			unionfs /nickel/onboard-overlay/overlay-unionfs:/nickel/onboard-overlay/read /nickel/onboard-overlay/overlay-unionfs-merged
+			fuse-overlayfs -o lowerdir=/nickel/onboard-overlay/overlay-unionfs-merged,upperdir=/nickel/onboard-overlay/write,workdir=/nickel/onboard-overlay/work /nickel/onboard-overlay/merged
+		else
+			fuse-overlayfs -o lowerdir=/nickel/onboard-overlay/read,upperdir=/nickel/onboard-overlay/write,workdir=/nickel/onboard-overlay/work /nickel/onboard-overlay/merged
+		fi
+
+		print "Onboard: Setting executable bit"
+		find /nickel/onboard-overlay/merged -type f -print0 | xargs -0 chmod 775
 		mount --bind /nickel/onboard-overlay/merged /nickel/rootfs-overlay/merged/mnt/onboard
 	fi
 
@@ -148,9 +168,9 @@ if [ "${1}" == "from_gui" ]; then
 else
 	print "Initializing"
 	ROOTFS="/data/nickelboot/rootfs/$(cat /data/config/rootfs 2>/dev/null)"
-	ROOTFS_OVERLAY="/data/nickelboot/rootfs-overlay/$(cat /data/config/rootfs_overlay 2>/dev/null)"
+	ROOTFS_OVERLAY="/data/nickelboot/rootfs-overlay/$(cat /data/config/rootfs-overlay 2>/dev/null)"
 	ONBOARD="/data/nickelboot/onboard/$(cat /data/config/onboard 2>/dev/null)"
-	ONBOARD_OVERLAY="/data/nickelboot/onboard-overlay/$(cat /data/config/onboard_overlay 2>/dev/null)"
+	ONBOARD_OVERLAY="/data/nickelboot/onboard-overlay/$(cat /data/config/onboard-overlay 2>/dev/null)"
 	CONF_ROOTFS_FOUND=0
 	AUTOBOOT=$(if grep -q "true" /data/config/autoboot 2>/dev/null; then printf "1"; else printf "0"; fi)
 
