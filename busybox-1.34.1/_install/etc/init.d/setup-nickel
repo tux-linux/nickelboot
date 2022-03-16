@@ -1,0 +1,182 @@
+#!/bin/sh
+
+eval "$(fbink -e)"
+FBINK_ROW=2
+
+print() {
+	printf "NickelBoot: %s\n" "${1}"
+	if [ "${2}" != "no_screen" ]; then
+		fbink -q -F THIN -y ${FBINK_ROW} "NickelBoot: ${1}"
+		FBINK_ROW=$((FBINK_ROW+2))
+		if [ ${FBINK_ROW} -gt ${MAXROWS} ]; then
+			FBINK_ROW=2
+		fi
+	fi
+}
+
+read_input() {
+	if [ "${1}" == "strict" ]; then
+		read -p "Please select: " selection
+	else
+		read -p "Please select (leave empty for none): " selection
+	fi
+
+	if [ -f "${PREFIX}${selection}" ]; then
+		printf "Selected %s\n" "${selection}"
+		return 0
+	else
+		if [ "${1}" == "strict" ]; then
+			printf "Selection %s does not exist!\n" "${selection}"
+			return 1
+		else
+			selection="NONE"
+		fi
+	fi
+}
+
+read_interactive() {
+	unset ROOTFS
+	unset ONBOARD
+	unset ROOTFS_OVERLAY
+	unset ONBOARD_OVERLAY
+	print "Entering interactive mode"
+	
+	# Root filesystem
+	while true; do
+		PREFIX="/data/nickelboot/rootfs/"
+		AVAILABLE_ROOTFS="$(ls /data/nickelboot/rootfs)"
+		printf "Available root filesystem(s):\n%s\n" "${AVAILABLE_ROOTFS}"
+		if read_input strict; then
+			ROOTFS="/data/nickelboot/rootfs/${selection}"
+			break
+		fi
+	done
+
+	# Onboard filesystem
+	while true; do
+		PREFIX="/data/nickelboot/onboard/"
+		AVAILABLE_ONBOARD="$(ls /data/nickelboot/onboard)"
+		printf "Available onboard filesystem(s):\n%s\n" "${AVAILABLE_ONBOARD}"
+		if read_input; then
+			if [ "${selection}" != "NONE" ]; then
+				ONBOARD="/data/nickelboot/onboard/${selection}"
+			fi
+			break
+		fi
+	done
+
+	# Root filesystem overlay
+	while true; do
+		PREFIX="/data/nickelboot/rootfs-overlay/"
+		AVAILABLE_ROOTFS_OVERLAY="$(ls /data/nickelboot/rootfs-overlay)"
+		printf "Available root filesystem overlay(s):\n%s\n" "${AVAILABLE_ROOTFS_OVERLAY}"
+		if read_input; then
+			if [ "${selection}" != "NONE" ]; then
+				ROOTFS_OVERLAY="/data/nickelboot/rootfs-overlay/${selection}"
+			fi
+			break
+		fi
+	done
+
+	# Onboard filesystem overlay
+	while true; do
+		PREFIX="/data/nickelboot/onboard-overlay"
+		AVAILABLE_ONBOARD_OVERLAY="$(ls /data/nickelboot/onboard-overlay)"
+		printf "Available onboard filesystem overlay(s):\n%s\n" "${AVAILABLE_ONBOARD_OVERLAY}"
+		if read_input; then
+			if [ "${selection}" != "NONE" ]; then
+				ONBOARD_OVERLAY="/data/nickelboot/onboard/${selection}"
+			fi
+			break
+		fi
+	done
+
+	print "Exiting interactive mode"
+}
+
+setup() {
+	mkdir -p /data/nickelboot/rootfs
+	mkdir -p /data/nickelboot/rootfs-overlay
+	mkdir -p /data/nickelboot/onboard
+	mkdir -p /data/nickelboot/onboard-overlay
+
+	mkdir -p /nickel/rootfs-overlay/read
+	mkdir -p /nickel/rootfs-overlay/write
+	mkdir -p /nickel/rootfs-overlay/work
+	mkdir -p /nickel/rootfs-overlay/merged
+	mkdir -p /nickel/onboard-overlay/read
+	mkdir -p /nickel/onboard-overlay/write
+	mkdir -p /nickel/onboard-overlay/work
+	mkdir -p /nickel/onboard-overlay/merged
+
+	if [ -e "${ROOTFS_OVERLAY}" ]; then
+		:
+	fi
+	if [ -e "${ONBOARD_OVERLAY}" ]; then
+	       :
+	fi	       
+
+	## Root filesystem
+	print "Setting up root filesystem"
+	mount "${ROOTFS}" /nickel/rootfs-overlay/read
+	fuse-overlayfs -o lowerdir=/nickel/rootfs-overlay/read,upperdir=/nickel/rootfs-overlay/write,workdir=/nickel/rootfs-overlay/work /nickel/rootfs-overlay/merged
+	mount -t devtmpfs devtmpfs /nickel/rootfs-overlay/merged/dev
+	mkdir -p /nickel/rootfs-overlay/merged/mnt/onboard
+	# Prevent deleting '/mnt/onboard/.kobo' for no reason and mounting mmcblk0p1 and mmcblk0p3
+	print "Patching firmware rcS"
+	cat /nickel/rootfs-overlay/read/etc/init.d/rcS | sed '/rm -rf \/mnt\/onboard/d;/mmcblk0p1/d;/mmcblk0p3/d' > /nickel/rootfs-overlay/merged/etc/init.d/rcS
+
+	## Onboard filesystem
+	if [ -f "${ONBOARD}" ]; then
+		print "Setting up onboard filesystem"
+		mount "${ONBOARD}" /nickel/onboard-overlay/read
+		fuse-overlayfs -o lowerdir=/nickel/onboard-overlay/read,upperdir=/nickel/onboard-overlay/write,workdir=/nickel/onboard-overlay/work /nickel/onboard-overlay/merged
+		mount --bind /nickel/onboard-overlay/merged /nickel/rootfs-overlay/merged/mnt/onboard
+	fi
+
+	## Starting Nickel
+	print "Starting firmware $(if ! cat /nickel/onboard-overlay/merged/.kobo/version | cut -d, -f3; then printf 'N/A'; fi)"
+	printf "\n"
+	chroot /nickel/rootfs-overlay/merged /etc/init.d/rcS
+}
+
+if [ "${1}" == "from_gui" ]; then
+	ROOTFS="${2}"
+	ROOTFS_OVERLAY="${3}"
+	ONBOARD="${4}"
+	ONBOARD_OVERLAY="${5}"
+else
+	print "Initializing"
+	ROOTFS="/data/nickelboot/rootfs/$(cat /data/config/rootfs 2>/dev/null)"
+	ROOTFS_OVERLAY="/data/nickelboot/rootfs-overlay/$(cat /data/config/rootfs_overlay 2>/dev/null)"
+	ONBOARD="/data/nickelboot/onboard/$(cat /data/config/onboard 2>/dev/null)"
+	ONBOARD_OVERLAY="/data/nickelboot/onboard-overlay/$(cat /data/config/onboard_overlay 2>/dev/null)"
+	CONF_ROOTFS_FOUND=0
+	AUTOBOOT=$(if grep -q "true" /data/config/autoboot 2>/dev/null; then printf "1"; else printf "0"; fi)
+
+	if [ -f "${ROOTFS}" ]; then
+		CONF_ROOTFS_FOUND=1
+		[ ${AUTOBOOT} == 1 ] && print "Using root filesystem ${ROOTFS}" no_screen
+	elif ! [ "$(ls -A /data/nickelboot/rootfs)" ]; then
+		print "FATAL: You must provide a root filesystem"
+		exit 127
+	fi
+
+	if [ ${AUTOBOOT} == 0 ]; then
+		read_interactive
+	fi
+
+	if [ ${AUTOBOOT} == 1 ]; then
+		if [ -f "${ONBOARD}" ]; then
+			print "Using onboard filesystem ${ONBOARD}" no_screen
+		fi
+		if [ -f "${ROOTFS_OVERLAY}" ]; then
+			print "Using root filesystem overlay ${ROOTFS_OVERLAY}" no_screen
+		fi
+		if [ -f "${ONBOARD_OVERLAY}" ]; then
+			print "Using onboard filesystem overlay ${ONBOARD_OVERLAY}" no_screen
+		fi
+	fi
+fi
+
+setup

@@ -1,0 +1,15 @@
+#!/bin/sh
+
+printf "Welcome to NickelBoot!\n"
+NICKELBOOT_VERSION_MESSAGE="NickelBoot: Version $(cat /etc/version) starting"
+printf "${NICKELBOOT_VERSION_MESSAGE}\n"
+mount -t sysfs sysfs /sys
+mount -t devtmpfs devtmpfs /dev
+mount -t proc proc /proc
+mount -t tmpfs tmpfs /tmp
+mount -t tmpfs tmpfs /run
+sleep 1
+fbink -q -F THIN -w -y 0 "${NICKELBOOT_VERSION_MESSAGE}"
+mount /dev/mmcblk0p3 -o ro /data
+
+/etc/init.d/setup-nickel
