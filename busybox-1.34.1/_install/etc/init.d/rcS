@@ -12,4 +12,8 @@ sleep 1
 fbink -q -F THIN -w -y 0 "${NICKELBOOT_VERSION_MESSAGE}"
 mount /dev/mmcblk0p3 -o ro /data
 
-/etc/init.d/setup-nickel
+read -t 3 -n 1 -s -r -p "(initrd) Hit any key to stop auto-boot ... " KEY
+if [ -z "${KEY}" ]; then
+	printf "\n"
+	/etc/init.d/setup-nickel
+fi
