@@ -15,5 +15,38 @@ mount /dev/mmcblk0p3 -o ro /data
 read -t 3 -n 1 -s -r -p "(initrd) Hit any key to stop auto-boot ... " KEY
 if [ -z "${KEY}" ]; then
 	printf "\n"
-	/etc/init.d/setup-nickel
+	if grep -q "true" /data/config/autoboot 2>/dev/null; then
+		/etc/init.d/setup-nickel
+	else
+		read -t 3 -n 1 -s -r -p "(initrd) Hit any key to launch text-based interactive mode ... " KEY
+		if [ -z "${KEY}" ]; then
+			printf "\n"
+			mkdir -p /qt
+			mount /data/qt.sqsh /qt
+
+			DEVICE="$(/bin/gnu_hwconfig kobo)"
+			if [ "${DEVICE}" == "alyssum" ]; then
+				mount --bind /qt/lib/libkobo.so.2 /qt/plugins/platforms/libkobo.so
+			else
+				mount --bind /qt/lib/libkobo.so.1 /qt/plugins/platforms/libkobo.so
+			fi
+
+			if [ "${DEVICE}" != "storm" ]; then
+				echo 3 > /sys/class/graphics/fb0/rotate
+			else
+				echo 0 > /sys/class/graphics/fb0/rotate
+			fi
+
+			LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:/qt/lib" QT_QPA_PLATFORM=kobo /usr/local/bin/nickelboot-gui
+			if [ ${?} == 0 ]; then
+				/etc/init.d/setup-nickel from_gui
+			else
+				fbink -q -F THIN -w -M -m "NickelBoot encountered an error"
+				sync
+				umount -l -f /data
+				poweroff
+		else
+			/etc/init.d/setup-nickel
+		fi
+	fi
 fi
