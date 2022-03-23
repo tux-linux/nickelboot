@@ -131,7 +131,7 @@ setup() {
 	# Mounting devtmpfs early, otherwise mmcblk0 open fails with "Permission denied"
 	mount -t devtmpfs devtmpfs /nickel/rootfs-overlay/merged/dev
 	mkdir -p /nickel/rootfs-overlay/merged/mnt/onboard
-	# Prevent deleting '/mnt/onboard/.kobo' for no reason and mounting mmcblk0p1 and mmcblk0p3
+	# Preventing '/mnt/onboard/.kobo' deletion for no reason and mounting mmcblk0p1 and mmcblk0p3
 	print "Patching firmware rcS"
 	cat /nickel/rootfs-overlay/read/etc/init.d/rcS | sed '/rm -rf \/mnt\/onboard/d;/mmcblk0p1/d;/mmcblk0p3/d' > /nickel/rootfs-overlay/merged/etc/init.d/rcS
 	## Onboard filesystem
@@ -161,10 +161,11 @@ setup() {
 }
 
 if [ "${1}" == "from_gui" ]; then
-	ROOTFS="${2}"
-	ROOTFS_OVERLAY="${3}"
-	ONBOARD="${4}"
-	ONBOARD_OVERLAY="${5}"
+	ROOTFS="$(cat /run/nickelboot-rootfs)"
+	ROOTFS_OVERLAY="$(cat /run/nickelboot-rootfs_overlay)"
+	ONBOARD="$(cat /run/nickelboot-onboard)"
+	ONBOARD_OVERLAY="$(cat /run/nickelboot-onboard_overlay)"
+	rm -f "/run/nickelboot-*"
 else
 	print "Initializing"
 	ROOTFS="/data/nickelboot/rootfs/$(cat /data/config/rootfs 2>/dev/null)"

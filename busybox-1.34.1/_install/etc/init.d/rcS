@@ -19,8 +19,8 @@ if [ -z "${KEY}" ]; then
 		/etc/init.d/setup-nickel
 	else
 		read -t 3 -n 1 -s -r -p "(initrd) Hit any key to launch text-based interactive mode ... " KEY
+		printf "\n"
 		if [ -z "${KEY}" ]; then
-			printf "\n"
 			mkdir -p /qt
 			mount /data/qt.sqsh /qt
 
@@ -45,6 +45,7 @@ if [ -z "${KEY}" ]; then
 				sync
 				umount -l -f /data
 				poweroff
+			fi
 		else
 			/etc/init.d/setup-nickel
 		fi
