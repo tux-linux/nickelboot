@@ -1,7 +1,11 @@
 #!/bin/sh
 
 eval "$(fbink -e)"
-FBINK_ROW=2
+if [ "${1}" == "from_gui" ]; then
+	FBINK_ROW=0
+else
+	FBINK_ROW=2
+fi
 
 print() {
 	printf "NickelBoot: %s\n" "${1}"

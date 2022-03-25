@@ -39,6 +39,7 @@ if [ -z "${KEY}" ]; then
 
 			LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:/qt/lib" QT_QPA_PLATFORM=kobo /usr/local/bin/nickelboot-gui
 			if [ ${?} == 0 ]; then
+				fbink -k -f -q -w
 				/etc/init.d/setup-nickel from_gui
 			else
 				fbink -q -F THIN -w -M -m "NickelBoot encountered an error"
